@@ -43,15 +43,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 // return index of active workspaces
 fn workspace_nums(connection: &mut Connection) -> Fallible<Vec<i32>> {
-    let mut workspace_nums:Vec<_> = connection
-        .get_workspaces()?
-        .iter()
-        .map(|ws| ws.num)
-        .collect();
+    let nums = connection.get_workspaces()?.iter().map(|ws| ws.num).collect();
 
-    workspace_nums.sort();
+    Ok(numbered_workspaces(nums))
+}
 
-    Ok(workspace_nums)
+// keep only the workspace numbers that occupy a slot, sorted and without
+// duplicates. sway reports -1 for named workspaces without a number (such as
+// "music"), and several workspaces can share a number ("2" and "2:web"); left
+// in, either breaks find_gap.
+fn numbered_workspaces(mut nums: Vec<i32>) -> Vec<i32> {
+    nums.retain(|&num| num > 0);
+    nums.sort_unstable();
+    nums.dedup();
+    nums
 }
 
 // assumes input list is sorted in ascending order
@@ -129,5 +134,37 @@ mod test {
         let actual = find_gap(&td);
 
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_named_workspace_without_number() {
+        // workspace 1, workspace 2 and a workspace named "music" (num -1)
+        let td = numbered_workspaces(vec![1, 2, -1]);
+
+        assert_eq!(vec![1, 2], td);
+        assert_eq!(3, find_gap(&td));
+    }
+
+    #[test]
+    fn test_only_named_workspaces() {
+        let td = numbered_workspaces(vec![-1, -1]);
+
+        assert_eq!(1, find_gap(&td));
+    }
+
+    #[test]
+    fn test_duplicate_workspace_numbers() {
+        // "1", "2" and "2:web" all exist; 3 is the first free number
+        let td = numbered_workspaces(vec![2, 1, 2]);
+
+        assert_eq!(vec![1, 2], td);
+        assert_eq!(3, find_gap(&td));
+    }
+
+    #[test]
+    fn test_named_workspace_with_gap() {
+        let td = numbered_workspaces(vec![-1, 3, 1]);
+
+        assert_eq!(2, find_gap(&td));
     }
 }
